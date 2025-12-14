@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Klassenbuch — Lehrer (Firebase)</title>
+  <style>
+    :root{--accent:#0070f3}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:12px;background:#f4f6f8;color:#111}
+    header{display:flex;justify-content:space-between;align-items:center}
+    h2{margin:0;font-size:1.05rem}
+    .card{background:#fff;padding:10px;margin:10px 0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    input,select,textarea,button{width:100%;box-sizing:border-box}
+    input,select,textarea{padding:10px;margin-top:8px;border-radius:8px;border:1px solid #e6eef8}
+    button{padding:10px;margin-top:10px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-weight:600}
+    .row{display:flex;gap:8px}
+    .row> *{flex:1}
+    .small{font-size:0.9rem;color:#444}
+    .student-row{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+    .student-row label{flex:1;min-width:120px}
+    .student-row select{flex:0 0 160px}
+    .student-row input[type="time"]{flex:0 0 120px}
+    @media (orientation:landscape){ body{padding:18px} }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>Klassenbuch — Lehrer</h2>
+    <a class="small" href="admin.html">Admin</a>
+  </header>
+
+  <!-- Firebase (Compat) CDN - bitte mit deiner Config ergänzen -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script>
+    // Firebase-Konfiguration hier einfügen (aus Firebase-Konsole)
+    const firebaseConfig = {
+      apiKey: "AIzaSyBdflIYtuxvtzwnJmOIfVwNByR9E7uAnwU",
+      authDomain: "klbuch-57460.firebaseapp.com",
+      projectId: "klbuch-57460"
+      // optional: storageBucket, messagingSenderId, appId
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+  <!-- Firestore-basierte Speicher-API (storage.firebase.js) -->
+  <script src="storage.firebase.js"></script>
+
+  <div class="card" id="entryCard">
+    <div class="small">Kurs</div>
+    <select id="courseSelect"></select>
+
+    <div class="small">Fach</div>
+    <select id="subjectSelect"></select>
+
+    <div class="small">Lehrer</div>
+    <select id="teacherSelect"></select>
+
+    <div class="row">
+      <div>
+        <div class="small">Datum</div>
+        <input id="date" type="date">
+      </div>
+      <div>
+        <div class="small">Stunde</div>
+        <select id="hour">
+          <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="small">Unterrichtsinhalt</div>
+    <textarea id="content" rows="3" placeholder="Kurz notieren..."></textarea>
+
+    <div class="small">Fehlzeiten (pro Schüler auswählen)</div>
+    <div id="studentsContainer" class="card" style="padding:8px"></div>
+
+    <button id="saveBtn">Schnell speichern</button>
+  </div>
+
+  <div id="list"></div>
+
+  <script>
+    // Alle kbStorage-Funktionen sind asynchron (Firestore). Wir verwenden async/await.
+    const kb = window.kbStorage;
+
+    if(!kb){
+      document.body.innerHTML = '<div style="padding:20px;color:#900">Fehler: storage.firebase.js oder Firebase nicht korrekt eingebunden.</div>';
+      throw new Error('kbStorage not available');
+    }
+
+    // DOM-Elemente
+    const courseSelect = document.getElementById('courseSelect');
+    const subjectSelect = document.getElementById('subjectSelect');
+    const teacherSelect = document.getElementById('teacherSelect');
+    const studentsContainer = document.getElementById('studentsContainer');
+    const list = document.getElementById('list');
+
+    // Hilfsfunktionen
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
+    function formatAbsences(abs){
+      if(!abs || abs.length === 0) return '-';
+      return abs.map(a=>{
+        if(a.type === 'absent_whole') return `${a.student}: fehlt ganz`;
+        if(a.type === 'absent_until') return `${a.student}: fehlt bis ${a.to || '-'}`;
+        if(a.type === 'absent_from') return `${a.student}: fehlt ab ${a.from || '-'}`;
+        if(a.type === 'absent_fromto') return `${a.student}: fehlt ${a.from || '-'}–${a.to || '-'}`;
+        return `${a.student}: ${a.type}`;
+      }).join('; ');
+    }
+
+    // Baut die Kurs-/Fach-/Lehrer-Auswahl und Schülerliste auf
+    async function populateMetaControls(){
+      const meta = await kb.loadMeta();
+      courseSelect.innerHTML = (meta.courses || []).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">--kein Kurs--</option>';
+      subjectSelect.innerHTML = (meta.subjects || []).map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('') || '<option value="">--kein Fach--</option>';
+      teacherSelect.innerHTML = (meta.teachers || []).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('') || '<option value="">--kein Lehrer--</option>';
+
+      courseSelect.removeEventListener('change', onCourseChange);
+      courseSelect.addEventListener('change', onCourseChange);
+      // initial
+      await onCourseChange();
+    }
+
+    // Wenn Kurs gewechselt wird, nur die zugehörigen Schüler anzeigen
+    async function onCourseChange(){
+      const courseId = courseSelect.value;
+      const students = await kb.getStudentsForCourse(courseId);
+      studentsContainer.innerHTML = '';
+      if(!students || students.length === 0){
+        studentsContainer.innerHTML = '<div class="small">Keine Schüler für diesen Kurs</div>';
+        return;
+      }
+      students.forEach(stu => {
+        const row = document.createElement('div'); row.className = 'student-row';
+        row.innerHTML = `<label>${escapeHtml(stu)}</label>
+                         <select class="absenceType">
+                           <option value="present">anwesend</option>
+                           <option value="absent_whole">gefehlt ganz</option>
+                           <option value="absent_until">gefehlt bis</option>
+                           <option value="absent_fromto">gefehlt von-bis</option>
+                           <option value="absent_from">gefehlt ab</option>
+                         </select>
+                         <input type="time" class="timeFrom" style="display:none">
+                         <input type="time" class="timeTo" style="display:none">`;
+        studentsContainer.appendChild(row);
+      });
+      // Listener für Zeitfelder
+      studentsContainer.querySelectorAll('.absenceType').forEach(sel=>{
+        sel.addEventListener('change', (ev)=>{
+          const row = ev.target.closest('.student-row');
+          const from = row.querySelector('.timeFrom');
+          const to = row.querySelector('.timeTo');
+          from.style.display = to.style.display = 'none';
+          if(ev.target.value === 'absent_until'){ to.style.display = 'inline-block'; }
+          if(ev.target.value === 'absent_from'){ from.style.display = 'inline-block'; }
+          if(ev.target.value === 'absent_fromto'){ from.style.display = to.style.display = 'inline-block'; }
+        });
+      });
+    }
+
+    // Einträge anzeigen (neueste zuerst)
+    async function renderEntries(){
+      list.innerHTML = '';
+      const entries = await kb.loadEntries();
+      if(!entries || entries.length === 0){ list.innerHTML = '<div class="card small">Keine Einträge</div>'; return; }
+      entries.slice().reverse().forEach(e=>{
+        const div = document.createElement('div'); div.className = 'card';
+        div.innerHTML = `<div class="small">${escapeHtml(e.date)} • Stunde ${escapeHtml(e.hour)} • ${escapeHtml(e.course)} • ${escapeHtml(e.subject)}</div>
+                         <div><strong>${escapeHtml(e.content || '-')}</strong></div>
+                         <div class="small">Fehlzeiten: ${formatAbsences(e.absences)}</div>
+                         <div class="small">Lehrer: ${escapeHtml(e.teacher || '-')} • Gesperrt: ${e.locked? 'Ja':'Nein'}</div>`;
+        list.appendChild(div);
+      });
+    }
+
+    // Absences sammeln
+    function collectAbsences(){
+      const arr = [];
+      studentsContainer.querySelectorAll('.student-row').forEach(row=>{
+        const student = row.querySelector('label').textContent;
+        const type = row.querySelector('.absenceType').value;
+        const from = row.querySelector('.timeFrom').value;
+        const to = row.querySelector('.timeTo').value;
+        if(type === 'present') return;
+        const obj = { student, type };
+        if(type === 'absent_until') obj.to = to || '';
+        if(type === 'absent_from') obj.from = from || '';
+        if(type === 'absent_fromto'){ obj.from = from || ''; obj.to = to || ''; }
+        arr.push(obj);
+      });
+      return arr;
+    }
+
+    // Speichern eines Eintrags (asynchron)
+    document.getElementById('saveBtn').addEventListener('click', async ()=>{
+      try{
+        const entry = {
+          course: courseSelect.value,
+          subject: subjectSelect.value,
+          teacher: teacherSelect.value,
+          date: document.getElementById('date').value || new Date().toISOString().slice(0,10),
+          hour: document.getElementById('hour').value,
+          content: document.getElementById('content').value.trim(),
+          absences: collectAbsences(),
+          locked: false
+        };
+        const res = await kb.addEntry(entry);
+        if(!res.ok){
+          alert(res.reason || 'Speichern fehlgeschlagen');
+          return;
+        }
+        // Reset für schnellen Workflow
+        document.getElementById('content').value = '';
+        studentsContainer.querySelectorAll('.absenceType').forEach(s=>s.value='present');
+        studentsContainer.querySelectorAll('.timeFrom, .timeTo').forEach(i=>i.value='');
+        await renderEntries();
+      } catch(err){
+        console.error(err);
+        alert('Fehler beim Speichern. Konsole prüfen.');
+      }
+    });
+
+    // Initialisierung (async)
+    (async function init(){
+      try{
+        await kb.ensureDefaults();
+        document.getElementById('date').value = new Date().toISOString().slice(0,10);
+        await populateMetaControls();
+        await renderEntries();
+      } catch(err){
+        console.error('Init error', err);
+      }
+    })();
+  </script>
+</body>
+</html>
