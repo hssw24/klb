@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Klassenbuch — Lehrer (Firebase)</title>
   <style>
     :root{--accent:#0070f3}
@@ -21,7 +21,6 @@
     .student-row select{flex:0 0 160px}
     .student-row input[type="time"]{flex:0 0 120px}
     @media (orientation:landscape){ body{padding:18px} }
-    pre.debug{white-space:pre-wrap;max-height:200px;overflow:auto;background:#fff;padding:8px;border-radius:8px;border:1px solid #eef4ff}
   </style>
 </head>
 <body>
@@ -81,14 +80,8 @@
 
   <div id="list"></div>
 
-  <!-- Optionales Debug-Widget (kann entfernt werden) -->
-  <div class="card">
-    <div class="small">Debug: rohe Einträge</div>
-    <pre id="rawEntries" class="debug"></pre>
-  </div>
-
   <script>
-    // Zugriff auf die Storage-API
+    // Alle kbStorage-Funktionen sind asynchron (Firestore). Wir verwenden async/await.
     const kb = window.kbStorage;
 
     if(!kb){
@@ -102,7 +95,6 @@
     const teacherSelect = document.getElementById('teacherSelect');
     const studentsContainer = document.getElementById('studentsContainer');
     const list = document.getElementById('list');
-    const rawEntriesEl = document.getElementById('rawEntries');
 
     // Hilfsfunktionen
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
@@ -117,7 +109,7 @@
       }).join('; ');
     }
 
-    // --- Meta Controls aufbauen ---
+    // Baut die Kurs-/Fach-/Lehrer-Auswahl und Schülerliste auf
     async function populateMetaControls(){
       const meta = await kb.loadMeta();
       courseSelect.innerHTML = (meta.courses || []).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">--kein Kurs--</option>';
@@ -126,6 +118,7 @@
 
       courseSelect.removeEventListener('change', onCourseChange);
       courseSelect.addEventListener('change', onCourseChange);
+      // initial
       await onCourseChange();
     }
 
@@ -152,6 +145,7 @@
                          <input type="time" class="timeTo" style="display:none">`;
         studentsContainer.appendChild(row);
       });
+      // Listener für Zeitfelder
       studentsContainer.querySelectorAll('.absenceType').forEach(sel=>{
         sel.addEventListener('change', (ev)=>{
           const row = ev.target.closest('.student-row');
@@ -163,23 +157,18 @@
           if(ev.target.value === 'absent_fromto'){ from.style.display = to.style.display = 'inline-block'; }
         });
       });
-      // Wenn LocalStorage eine Auswahl hatte, setze die Abwesenheitsfelder zurück auf "anwesend"
-      // (keine Persistenz der einzelnen Abwesenheiten vorgesehen)
     }
 
-    // --- Entries rendern ---
+    // Einträge anzeigen (neueste zuerst)
     async function renderEntries(){
-      const entries = await kb.loadEntries();
-      console.log('renderEntries got', entries);
-      rawEntriesEl.textContent = JSON.stringify(entries || [], null, 2);
       list.innerHTML = '';
+      const entries = await kb.loadEntries();
       if(!entries || entries.length === 0){ list.innerHTML = '<div class="card small">Keine Einträge</div>'; return; }
       entries.slice().reverse().forEach(e=>{
         const div = document.createElement('div'); div.className = 'card';
-        const absText = formatAbsences(e.absences || []);
         div.innerHTML = `<div class="small">${escapeHtml(e.date)} • Stunde ${escapeHtml(e.hour)} • ${escapeHtml(e.course)} • ${escapeHtml(e.subject)}</div>
                          <div><strong>${escapeHtml(e.content || '-')}</strong></div>
-                         <div class="small">Fehlzeiten: ${escapeHtml(absText)}</div>
+                         <div class="small">Fehlzeiten: ${formatAbsences(e.absences)}</div>
                          <div class="small">Lehrer: ${escapeHtml(e.teacher || '-')} • Gesperrt: ${e.locked? 'Ja':'Nein'}</div>`;
         list.appendChild(div);
       });
@@ -201,59 +190,6 @@
         arr.push(obj);
       });
       return arr;
-    }
-
-    // --- LocalStorage: letzte Auswahl speichern / laden ---
-    const LS_KEY = 'kb_lastSelection';
-
-    function saveLastSelection() {
-      try {
-        const payload = {
-          course: courseSelect.value || '',
-          subject: subjectSelect.value || '',
-          teacher: teacherSelect.value || '',
-          hour: document.getElementById('hour').value || ''
-        };
-        localStorage.setItem(LS_KEY, JSON.stringify(payload));
-      } catch (e) {
-        console.warn('Could not save last selection', e);
-      }
-    }
-
-    function loadLastSelection() {
-      try {
-        const raw = localStorage.getItem(LS_KEY);
-        if (!raw) return null;
-        return JSON.parse(raw);
-      } catch (e) {
-        console.warn('Could not load last selection', e);
-        return null;
-      }
-    }
-
-    // Hook up change listeners so every change is persisted
-    courseSelect.addEventListener('change', () => { saveLastSelection(); onCourseChange(); });
-    subjectSelect.addEventListener('change', saveLastSelection);
-    teacherSelect.addEventListener('change', saveLastSelection);
-    document.getElementById('hour').addEventListener('change', saveLastSelection);
-
-    // Restore last selection after meta controls are populated
-    async function restoreLastSelectionAfterMeta() {
-      const last = loadLastSelection();
-      if (!last) return;
-      const courseOption = Array.from(courseSelect.options).find(o => o.value === last.course);
-      if (courseOption) {
-        courseSelect.value = last.course;
-      }
-      await onCourseChange();
-      const subjectOption = Array.from(subjectSelect.options).find(o => o.value === last.subject);
-      if (subjectOption) subjectSelect.value = last.subject;
-      const teacherOption = Array.from(teacherSelect.options).find(o => o.value === last.teacher);
-      if (teacherOption) teacherSelect.value = last.teacher;
-      const hourEl = document.getElementById('hour');
-      if (last.hour && Array.from(hourEl.options).some(o => o.value === last.hour)) {
-        hourEl.value = last.hour;
-      }
     }
 
     // Speichern eines Eintrags (asynchron)
@@ -291,7 +227,6 @@
         await kb.ensureDefaults();
         document.getElementById('date').value = new Date().toISOString().slice(0,10);
         await populateMetaControls();
-        await restoreLastSelectionAfterMeta();
         await renderEntries();
       } catch(err){
         console.error('Init error', err);
