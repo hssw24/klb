@@ -20,8 +20,6 @@
     .student-row label{flex:1;min-width:120px}
     .student-row select{flex:0 0 160px}
     .student-row input[type="time"]{flex:0 0 120px}
-    .actions{display:flex;gap:8px}
-    .muted{background:#888}
     @media (orientation:landscape){ body{padding:18px} }
     pre.debug{white-space:pre-wrap;max-height:200px;overflow:auto;background:#fff;padding:8px;border-radius:8px;border:1px solid #eef4ff}
   </style>
@@ -78,11 +76,7 @@
     <div class="small">Fehlzeiten (pro Schüler auswählen)</div>
     <div id="studentsContainer" class="card" style="padding:8px"></div>
 
-    <input type="hidden" id="editingId" value="">
-    <div class="actions">
-      <button id="saveBtn">Schnell speichern</button>
-      <button id="cancelEditBtn" class="muted" style="display:none">Abbrechen</button>
-    </div>
+    <button id="saveBtn">Schnell speichern</button>
   </div>
 
   <div id="list"></div>
@@ -94,13 +88,15 @@
   </div>
 
   <script>
+    // Zugriff auf die Storage-API
     const kb = window.kbStorage;
+
     if(!kb){
       document.body.innerHTML = '<div style="padding:20px;color:#900">Fehler: storage.firebase.js oder Firebase nicht korrekt eingebunden.</div>';
       throw new Error('kbStorage not available');
     }
 
-    // DOM
+    // DOM-Elemente
     const courseSelect = document.getElementById('courseSelect');
     const subjectSelect = document.getElementById('subjectSelect');
     const teacherSelect = document.getElementById('teacherSelect');
@@ -108,6 +104,7 @@
     const list = document.getElementById('list');
     const rawEntriesEl = document.getElementById('rawEntries');
 
+    // Hilfsfunktionen
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
     function formatAbsences(abs){
       if(!abs || abs.length === 0) return '-';
@@ -120,7 +117,7 @@
       }).join('; ');
     }
 
-    // Meta controls
+    // --- Meta Controls aufbauen ---
     async function populateMetaControls(){
       const meta = await kb.loadMeta();
       courseSelect.innerHTML = (meta.courses || []).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('') || '<option value="">--kein Kurs--</option>';
@@ -132,6 +129,7 @@
       await onCourseChange();
     }
 
+    // Wenn Kurs gewechselt wird, nur die zugehörigen Schüler anzeigen
     async function onCourseChange(){
       const courseId = courseSelect.value;
       const students = await kb.getStudentsForCourse(courseId);
@@ -165,9 +163,11 @@
           if(ev.target.value === 'absent_fromto'){ from.style.display = to.style.display = 'inline-block'; }
         });
       });
+      // Wenn LocalStorage eine Auswahl hatte, setze die Abwesenheitsfelder zurück auf "anwesend"
+      // (keine Persistenz der einzelnen Abwesenheiten vorgesehen)
     }
 
-    // render entries
+    // --- Entries rendern ---
     async function renderEntries(){
       const entries = await kb.loadEntries();
       console.log('renderEntries got', entries);
@@ -177,19 +177,15 @@
       entries.slice().reverse().forEach(e=>{
         const div = document.createElement('div'); div.className = 'card';
         const absText = formatAbsences(e.absences || []);
-        let actionsHtml = '';
-        if (!e.locked) {
-          actionsHtml = `<button class="editEntryBtn" data-id="${e.id}" style="margin-top:6px;background:#0b6cff">Bearbeiten</button>`;
-        }
         div.innerHTML = `<div class="small">${escapeHtml(e.date)} • Stunde ${escapeHtml(e.hour)} • ${escapeHtml(e.course)} • ${escapeHtml(e.subject)}</div>
                          <div><strong>${escapeHtml(e.content || '-')}</strong></div>
                          <div class="small">Fehlzeiten: ${escapeHtml(absText)}</div>
-                         <div class="small">Lehrer: ${escapeHtml(e.teacher || '-')} • Gesperrt: ${e.locked? 'Ja':'Nein'}</div>
-                         <div style="margin-top:8px">${actionsHtml}</div>`;
+                         <div class="small">Lehrer: ${escapeHtml(e.teacher || '-')} • Gesperrt: ${e.locked? 'Ja':'Nein'}</div>`;
         list.appendChild(div);
       });
     }
 
+    // Absences sammeln
     function collectAbsences(){
       const arr = [];
       studentsContainer.querySelectorAll('.student-row').forEach(row=>{
@@ -207,8 +203,9 @@
       return arr;
     }
 
-    // LocalStorage last selection
+    // --- LocalStorage: letzte Auswahl speichern / laden ---
     const LS_KEY = 'kb_lastSelection';
+
     function saveLastSelection() {
       try {
         const payload = {
@@ -218,38 +215,50 @@
           hour: document.getElementById('hour').value || ''
         };
         localStorage.setItem(LS_KEY, JSON.stringify(payload));
-      } catch (e) { console.warn('Could not save last selection', e); }
+      } catch (e) {
+        console.warn('Could not save last selection', e);
+      }
     }
+
     function loadLastSelection() {
       try {
         const raw = localStorage.getItem(LS_KEY);
         if (!raw) return null;
         return JSON.parse(raw);
-      } catch (e) { console.warn('Could not load last selection', e); return null; }
+      } catch (e) {
+        console.warn('Could not load last selection', e);
+        return null;
+      }
     }
+
+    // Hook up change listeners so every change is persisted
     courseSelect.addEventListener('change', () => { saveLastSelection(); onCourseChange(); });
     subjectSelect.addEventListener('change', saveLastSelection);
     teacherSelect.addEventListener('change', saveLastSelection);
     document.getElementById('hour').addEventListener('change', saveLastSelection);
 
+    // Restore last selection after meta controls are populated
     async function restoreLastSelectionAfterMeta() {
       const last = loadLastSelection();
       if (!last) return;
       const courseOption = Array.from(courseSelect.options).find(o => o.value === last.course);
-      if (courseOption) courseSelect.value = last.course;
+      if (courseOption) {
+        courseSelect.value = last.course;
+      }
       await onCourseChange();
       const subjectOption = Array.from(subjectSelect.options).find(o => o.value === last.subject);
       if (subjectOption) subjectSelect.value = last.subject;
       const teacherOption = Array.from(teacherSelect.options).find(o => o.value === last.teacher);
       if (teacherOption) teacherSelect.value = last.teacher;
       const hourEl = document.getElementById('hour');
-      if (last.hour && Array.from(hourEl.options).some(o => o.value === last.hour)) hourEl.value = last.hour;
+      if (last.hour && Array.from(hourEl.options).some(o => o.value === last.hour)) {
+        hourEl.value = last.hour;
+      }
     }
 
-    // Save / Update
+    // Speichern eines Eintrags (asynchron)
     document.getElementById('saveBtn').addEventListener('click', async ()=>{
       try{
-        const editingId = document.getElementById('editingId').value || '';
         const entry = {
           course: courseSelect.value,
           subject: subjectSelect.value,
@@ -260,18 +269,12 @@
           absences: collectAbsences(),
           locked: false
         };
-
-        if (editingId) {
-          const res = await kb.updateEntry(editingId, entry);
-          if(!res.ok){ alert(res.reason || 'Update fehlgeschlagen'); return; }
-          document.getElementById('editingId').value = '';
-          document.getElementById('saveBtn').textContent = 'Schnell speichern';
-          document.getElementById('cancelEditBtn').style.display = 'none';
-        } else {
-          const res = await kb.addEntry(entry);
-          if(!res.ok){ alert(res.reason || 'Speichern fehlgeschlagen'); return; }
+        const res = await kb.addEntry(entry);
+        if(!res.ok){
+          alert(res.reason || 'Speichern fehlgeschlagen');
+          return;
         }
-
+        // Reset für schnellen Workflow
         document.getElementById('content').value = '';
         studentsContainer.querySelectorAll('.absenceType').forEach(s=>s.value='present');
         studentsContainer.querySelectorAll('.timeFrom, .timeTo').forEach(i=>i.value='');
@@ -282,54 +285,7 @@
       }
     });
 
-    document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
-      document.getElementById('editingId').value = '';
-      document.getElementById('saveBtn').textContent = 'Schnell speichern';
-      document.getElementById('cancelEditBtn').style.display = 'none';
-      restoreLastSelectionAfterMeta();
-    });
-
-    // Delegation: edit button
-    document.addEventListener('click', async (ev) => {
-      if (ev.target.classList.contains('editEntryBtn')) {
-        const id = ev.target.dataset.id;
-        const entries = await kb.loadEntries();
-        const e = (entries || []).find(x => x.id === id);
-        if (!e) return alert('Eintrag nicht gefunden');
-        if (e.locked) return alert('Eintrag ist gesperrt und kann nicht bearbeitet werden');
-
-        document.getElementById('editingId').value = id;
-        courseSelect.value = e.course || '';
-        await onCourseChange();
-        subjectSelect.value = e.subject || '';
-        teacherSelect.value = e.teacher || '';
-        document.getElementById('date').value = e.date || new Date().toISOString().slice(0,10);
-        document.getElementById('hour').value = e.hour || '1';
-        document.getElementById('content').value = e.content || '';
-
-        studentsContainer.querySelectorAll('.student-row').forEach(row=>{
-          const name = row.querySelector('label').textContent;
-          const sel = row.querySelector('.absenceType');
-          const from = row.querySelector('.timeFrom');
-          const to = row.querySelector('.timeTo');
-          sel.value = 'present'; from.value=''; to.value=''; from.style.display=to.style.display='none';
-          const a = (e.absences||[]).find(x=>x.student === name);
-          if (a) {
-            sel.value = a.type || 'present';
-            if (a.type === 'absent_until') { to.value = a.to || ''; to.style.display='inline-block'; }
-            if (a.type === 'absent_from') { from.value = a.from || ''; from.style.display='inline-block'; }
-            if (a.type === 'absent_fromto') { from.value = a.from || ''; to.value = a.to || ''; from.style.display=to.style.display='inline-block'; }
-          }
-        });
-
-        document.getElementById('saveBtn').textContent = 'Änderungen speichern';
-        document.getElementById('cancelEditBtn').style.display = 'inline-block';
-        saveLastSelection();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    });
-
-    // Init
+    // Initialisierung (async)
     (async function init(){
       try{
         await kb.ensureDefaults();
