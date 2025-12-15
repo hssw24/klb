@@ -1,0 +1,70 @@
+// Migrationsscript für Browserkonsole
+(async function(){
+  const db = firebase.firestore();
+  const COLL = 'entries';
+
+  // Erzeugt deterministische ID aus course/date/hour
+  function makeId(entry){
+    const safe = s => String(s||'').trim().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_\-]/g,'');
+    return `${safe(entry.course)}__${safe(entry.date)}__${safe(entry.hour)}`;
+  }
+
+  // Konfiguration: zuerst nur Dry‑Run; setze auf true um zu migrieren
+  const doMigrate = true; // <-- auf true setzen, um Änderungen durchzuführen
+  const deleteOld = true;  // wenn true: altes Dokument nach erfolgreichem Kopieren löschen
+
+  console.log('Migration start. doMigrate=', doMigrate, 'deleteOld=', deleteOld);
+
+  try {
+    const snap = await db.collection(COLL).get();
+    console.log('Gefundene Dokumente:', snap.size);
+
+    const conflicts = [];
+    const migrated = [];
+    const skipped = [];
+
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const oldId = doc.id;
+      const newId = makeId(data);
+
+      if (!newId) {
+        console.warn('Leere Ziel-ID für', oldId, data);
+        skipped.push({ id: oldId, reason: 'empty_new_id' });
+        continue;
+      }
+
+      if (newId === oldId) {
+        // bereits in gewünschtem Format
+        skipped.push({ id: oldId, reason: 'already_ok' });
+        continue;
+      }
+
+      const targetSnap = await db.collection(COLL).doc(newId).get();
+      if (targetSnap.exists) {
+        console.warn('Konflikt: Ziel existiert bereits', oldId, '->', newId);
+        conflicts.push({ from: oldId, to: newId });
+        continue;
+      }
+
+      console.log('Wird migriert:', oldId, '->', newId, data);
+
+      if (doMigrate) {
+        // set new doc, dann optional delete old
+        await db.collection(COLL).doc(newId).set(data);
+        if (deleteOld) {
+          await db.collection(COLL).doc(oldId).delete();
+        }
+        migrated.push({ from: oldId, to: newId });
+      }
+    }
+
+    console.log('--- Migration Ergebnis ---');
+    console.log('migrated count:', migrated.length);
+    console.log('conflicts count:', conflicts.length, conflicts);
+    console.log('skipped count:', skipped.length, skipped);
+    console.log('Fertig. Wenn doMigrate=false war, setze doMigrate=true und führe erneut aus, um zu migrieren.');
+  } catch (err) {
+    console.error('Migration Fehler', err);
+  }
+})();

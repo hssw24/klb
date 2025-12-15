@@ -46,12 +46,6 @@
   }
 
   // --- Entries ---
-  // Helper: deterministic ID aus course/date/hour
-  function makeEntryId(entry) {
-    const safe = (s='') => String(s || '').trim().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_\-]/g,'');
-    return `${safe(entry.course)}__${safe(entry.date)}__${safe(entry.hour)}`;
-  }
-
   async function loadEntries(){
     try {
       // bevorzugte Abfrage mit Composite-Index
@@ -71,70 +65,26 @@
     }
   }
 
-  // Add entry: legt Dokument mit deterministischer ID an, schlägt fehl bei Duplikat
   async function addEntry(entry){
     try {
-      const id = makeEntryId(entry);
-      const docRef = db.collection(ENTRIES_COLL).doc(id);
-
-      // Transaktion: nur anlegen, wenn noch nicht vorhanden
-      const res = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(docRef);
-        if (snap.exists) {
-          // Wenn bereits existiert, verhindere Duplikat
-          return { ok: false, reason: 'duplicate' };
-        }
-        // set ohne merge, damit Felder exakt gesetzt werden
-        tx.set(docRef, entry);
-        return { ok: true, id };
-      });
-
-      return res;
+      const res = await db.collection(ENTRIES_COLL).add(entry);
+      return { ok: true, id: res.id };
     } catch (err) {
       console.error('addEntry error', err);
       return { ok: false, reason: err.message || String(err) };
     }
   }
 
-  // Update entry: behandelt Umbenennung der ID, prüft Lock und Duplikate
-  async function updateEntry(oldId, data){
+  async function updateEntry(id, data){
     try {
-      if (!oldId) return { ok: false, reason: 'missing id' };
-      const oldRef = db.collection(ENTRIES_COLL).doc(oldId);
-      const oldSnap = await oldRef.get();
-      if (!oldSnap.exists) return { ok: false, reason: 'not found' };
-      const current = oldSnap.data() || {};
+      if (!id) return { ok: false, reason: 'missing id' };
+      const docRef = db.collection(ENTRIES_COLL).doc(id);
+      const snap = await docRef.get();
+      if (!snap.exists) return { ok: false, reason: 'not found' };
+      const current = snap.data() || {};
       if (current.locked) return { ok: false, reason: 'locked' };
-
-      // Bestimme neue ID (falls course/date/hour geändert wurden)
-      const newId = makeEntryId(data);
-      const newRef = db.collection(ENTRIES_COLL).doc(newId);
-
-      // Wenn ID gleich bleibt, einfache Update (prüfe Lock nochmal in Transaction)
-      if (newId === oldId) {
-        await oldRef.update(data);
-        return { ok: true };
-      }
-
-      // Wenn ID sich ändert: atomisch erstellen, prüfen ob Ziel existiert, dann löschen
-      const result = await db.runTransaction(async (tx) => {
-        const targetSnap = await tx.get(newRef);
-        if (targetSnap.exists) {
-          return { ok: false, reason: 'duplicate_target' };
-        }
-        // nochmal prüfen, dass alteDoc noch existiert und nicht gesperrt
-        const checkOld = await tx.get(oldRef);
-        if (!checkOld.exists) return { ok: false, reason: 'not_found_during_tx' };
-        const oldData = checkOld.data() || {};
-        if (oldData.locked) return { ok: false, reason: 'locked' };
-
-        // set new doc und delete old doc
-        tx.set(newRef, Object.assign({}, oldData, data));
-        tx.delete(oldRef);
-        return { ok: true, id: newId };
-      });
-
-      return result;
+      await docRef.update(data);
+      return { ok: true };
     } catch (err) {
       console.error('updateEntry error', err);
       return { ok: false, reason: err.message || String(err) };

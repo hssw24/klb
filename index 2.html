@@ -263,31 +263,13 @@
 
         if (editingId) {
           const res = await kb.updateEntry(editingId, entry);
-          if(!res.ok){
-            if(res.reason === 'duplicate_target') {
-              alert('Update abgebrochen: Zielkombination (Kurs/Datum/Stunde) existiert bereits.');
-              return;
-            }
-            if(res.reason === 'locked') {
-              alert('Update abgebrochen: Eintrag ist gesperrt.');
-              return;
-            }
-            alert(res.reason || 'Update fehlgeschlagen');
-            return;
-          }
+          if(!res.ok){ alert(res.reason || 'Update fehlgeschlagen'); return; }
           document.getElementById('editingId').value = '';
           document.getElementById('saveBtn').textContent = 'Schnell speichern';
           document.getElementById('cancelEditBtn').style.display = 'none';
         } else {
           const res = await kb.addEntry(entry);
-          if(!res.ok){
-            if(res.reason === 'duplicate'){
-              alert('Eintrag existiert bereits für diese Kombination aus Kurs/Datum/Stunde.');
-              return;
-            }
-            alert(res.reason || 'Speichern fehlgeschlagen');
-            return;
-          }
+          if(!res.ok){ alert(res.reason || 'Speichern fehlgeschlagen'); return; }
         }
 
         document.getElementById('content').value = '';
