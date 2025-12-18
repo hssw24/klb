@@ -7,7 +7,6 @@
     console.error('Firebase not loaded');
     window.kbStorage = {
       loadMeta: async ()=>({ courses:[], subjects:[], teachers:[] }),
-      saveMeta: async ()=>({ ok:false, reason:'firebase missing' }),
       loadEntries: async ()=>[],
       addEntry: async ()=>({ ok:false, reason:'firebase missing' }),
       updateEntry: async ()=>({ ok:false, reason:'firebase missing' }),
@@ -46,7 +45,8 @@
     }
   }
 
-  // --- Entries (unverändert, inkl. deterministische ID-Logik falls du sie nutzt) ---
+  // --- Entries ---
+  // Helper: deterministic ID aus course/date/hour
   function makeEntryId(entry) {
     const safe = (s='') => String(s || '').trim().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_\-]/g,'');
     return `${safe(entry.course)}__${safe(entry.date)}__${safe(entry.hour)}`;
@@ -54,10 +54,13 @@
 
   async function loadEntries(){
     try {
+      // bevorzugte Abfrage mit Composite-Index
       const snap = await db.collection(ENTRIES_COLL).orderBy('date').orderBy('hour').get();
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch (err) {
       console.error('loadEntries error', err);
+      console.error('loadEntries message:', err.message);
+      // Fallback: einfache Abfrage ohne orderBy
       try {
         const snap2 = await db.collection(ENTRIES_COLL).get();
         return snap2.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -68,16 +71,24 @@
     }
   }
 
+  // Add entry: legt Dokument mit deterministischer ID an, schlägt fehl bei Duplikat
   async function addEntry(entry){
     try {
       const id = makeEntryId(entry);
       const docRef = db.collection(ENTRIES_COLL).doc(id);
+
+      // Transaktion: nur anlegen, wenn noch nicht vorhanden
       const res = await db.runTransaction(async (tx) => {
         const snap = await tx.get(docRef);
-        if (snap.exists) return { ok: false, reason: 'duplicate' };
+        if (snap.exists) {
+          // Wenn bereits existiert, verhindere Duplikat
+          return { ok: false, reason: 'duplicate' };
+        }
+        // set ohne merge, damit Felder exakt gesetzt werden
         tx.set(docRef, entry);
         return { ok: true, id };
       });
+
       return res;
     } catch (err) {
       console.error('addEntry error', err);
@@ -85,6 +96,7 @@
     }
   }
 
+  // Update entry: behandelt Umbenennung der ID, prüft Lock und Duplikate
   async function updateEntry(oldId, data){
     try {
       if (!oldId) return { ok: false, reason: 'missing id' };
@@ -94,21 +106,29 @@
       const current = oldSnap.data() || {};
       if (current.locked) return { ok: false, reason: 'locked' };
 
+      // Bestimme neue ID (falls course/date/hour geändert wurden)
       const newId = makeEntryId(data);
       const newRef = db.collection(ENTRIES_COLL).doc(newId);
 
+      // Wenn ID gleich bleibt, einfache Update (prüfe Lock nochmal in Transaction)
       if (newId === oldId) {
         await oldRef.update(data);
         return { ok: true };
       }
 
+      // Wenn ID sich ändert: atomisch erstellen, prüfen ob Ziel existiert, dann löschen
       const result = await db.runTransaction(async (tx) => {
         const targetSnap = await tx.get(newRef);
-        if (targetSnap.exists) return { ok: false, reason: 'duplicate_target' };
+        if (targetSnap.exists) {
+          return { ok: false, reason: 'duplicate_target' };
+        }
+        // nochmal prüfen, dass alteDoc noch existiert und nicht gesperrt
         const checkOld = await tx.get(oldRef);
         if (!checkOld.exists) return { ok: false, reason: 'not_found_during_tx' };
         const oldData = checkOld.data() || {};
         if (oldData.locked) return { ok: false, reason: 'locked' };
+
+        // set new doc und delete old doc
         tx.set(newRef, Object.assign({}, oldData, data));
         tx.delete(oldRef);
         return { ok: true, id: newId };
@@ -145,7 +165,7 @@
     }
   }
 
-  // --- Courses / Students helpers (meta.courses is array of {id,name,students:[], timetable:{mon:[],...}}) ---
+  // --- Courses / Students helpers (meta.courses is array of {id,name,students:[]}) ---
   async function getStudentsForCourse(courseId){
     try {
       const meta = await loadMeta();
@@ -161,16 +181,10 @@
     try {
       const meta = await loadMeta();
       meta.courses = meta.courses || [];
+      // generate id from name if not provided
       const id = name.replace(/\s+/g,'').toUpperCase();
       if (meta.courses.find(c=>c.id === id)) return { ok:false, reason:'exists' };
-      const timetable = {
-        mon:['','','','','',''],
-        tue:['','','','','',''],
-        wed:['','','','','',''],
-        thu:['','','','','',''],
-        fri:['','','','','','']
-      };
-      meta.courses.push({ id, name, students: students || [], timetable });
+      meta.courses.push({ id, name, students: students || [] });
       await saveMeta(meta);
       return { ok:true, id };
     } catch (err) {
@@ -191,7 +205,7 @@
     }
   }
 
-  // ensure defaults: create meta doc if missing and ensure timetable exists for each course
+  // ensure defaults: create meta doc if missing
   async function ensureDefaults(){
     try {
       const meta = await loadMeta();
@@ -199,30 +213,6 @@
       if (!meta.courses) { meta.courses = []; changed = true; }
       if (!meta.subjects) { meta.subjects = []; changed = true; }
       if (!meta.teachers) { meta.teachers = []; changed = true; }
-
-      // ensure timetable for each course
-      (meta.courses || []).forEach(c=>{
-        if (!c.timetable) {
-          c.timetable = {
-            mon:['','','','','',''],
-            tue:['','','','','',''],
-            wed:['','','','','',''],
-            thu:['','','','','',''],
-            fri:['','','','','','']
-          };
-          changed = true;
-        } else {
-          // ensure arrays length 6 for each day
-          ['mon','tue','wed','thu','fri'].forEach(d=>{
-            if (!Array.isArray(c.timetable[d]) || c.timetable[d].length !== 6) {
-              c.timetable[d] = c.timetable[d] && Array.isArray(c.timetable[d]) ? c.timetable[d].slice(0,6) : ['', '', '', '', '', ''];
-              while (c.timetable[d].length < 6) c.timetable[d].push('');
-              changed = true;
-            }
-          });
-        }
-      });
-
       if (changed) await saveMeta(meta);
       return { ok:true };
     } catch (err) {

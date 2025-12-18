@@ -40,9 +40,9 @@
   <script>
     // Firebase-Konfiguration hier einfügen (aus Firebase-Konsole)
     const firebaseConfig = {
-      apiKey: "AIzaSyBdflIYtuxvtzwnJmOIfVwNByR9E7uAnwU",
-      authDomain: "klbuch-57460.firebaseapp.com",
-      projectId: "klbuch-57460"
+      apiKey: "DEINE_API_KEY",
+      authDomain: "DEINE_AUTH_DOMAIN",
+      projectId: "DEINE_PROJECT_ID"
       // optional: storageBucket, messagingSenderId, appId
     };
     firebase.initializeApp(firebaseConfig);
@@ -146,8 +146,9 @@
       subjectSelect.addEventListener('change', onSubjectManualChange);
       await onCourseChange();
     }
-// Wenn Lehrer manuell das Fach ändert, Hinweis ausblenden
+
     function onSubjectManualChange(){
+      // Wenn Lehrer manuell das Fach ändert, Hinweis ausblenden
       timetableNote.style.display = 'none';
       saveLastSelection();
     }
@@ -325,7 +326,8 @@
         alert('Das im Stundenplan eingetragene Fach "' + subjId + '" ist nicht in der Fächerliste vorhanden. Bitte Admin prüfen.');
       }
     });
-// --- Save / Update Eintrag ---
+
+    // --- Save / Update Eintrag ---
     document.getElementById('saveBtn').addEventListener('click', async ()=>{
       try{
         const editingId = document.getElementById('editingId').value || '';
@@ -438,9 +440,5 @@
         await restoreLastSelectionAfterMeta();
         await renderEntries();
       } catch(err){
-        console.error('Init error', err);
-      }
-    })();
-  </script>
-</body>
-</html>
+        console.
+        

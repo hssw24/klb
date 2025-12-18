@@ -23,7 +23,6 @@
     .actions{display:flex;gap:8px}
     .muted{background:#888}
     .inline-btn{width:auto;padding:8px 12px;display:inline-block}
-    .timetable-note{display:inline-block;margin-left:8px;font-size:0.85rem;color:#0b6cff}
     @media (orientation:landscape){ body{padding:18px} }
     pre.debug{white-space:pre-wrap;max-height:200px;overflow:auto;background:#fff;padding:8px;border-radius:8px;border:1px solid #eef4ff}
   </style>
@@ -56,10 +55,7 @@
     <select id="courseSelect"></select>
 
     <div class="small">Fach</div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <select id="subjectSelect" style="flex:1"></select>
-      <span id="timetableNote" class="timetable-note" style="display:none">Aus Stundenplan übernommen</span>
-    </div>
+    <select id="subjectSelect"></select>
 
     <div class="small">Lehrer</div>
     <select id="teacherSelect"></select>
@@ -118,7 +114,6 @@
     const list = document.getElementById('list');
     const rawEntriesEl = document.getElementById('rawEntries');
     const applyTimetableBtn = document.getElementById('applyTimetableBtn');
-    const timetableNote = document.getElementById('timetableNote');
 
     // Hilfsfunktionen
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
@@ -142,14 +137,7 @@
 
       courseSelect.removeEventListener('change', onCourseChange);
       courseSelect.addEventListener('change', onCourseChange);
-      subjectSelect.removeEventListener('change', onSubjectManualChange);
-      subjectSelect.addEventListener('change', onSubjectManualChange);
       await onCourseChange();
-    }
-// Wenn Lehrer manuell das Fach ändert, Hinweis ausblenden
-    function onSubjectManualChange(){
-      timetableNote.style.display = 'none';
-      saveLastSelection();
     }
 
     // Wenn Kurs gewechselt wird, nur die zugehörigen Schüler anzeigen
@@ -319,13 +307,15 @@
       const opt = Array.from(subjectSelect.options).find(o => o.value === subjId);
       if(opt){
         subjectSelect.value = subjId;
-        timetableNote.style.display = 'inline-block';
         saveLastSelection();
+        alert('Fach aus Stundenplan übernommen: ' + subjId);
       } else {
+        // Falls das Fach nicht in meta.subjects mehr existiert, zeige Hinweis
         alert('Das im Stundenplan eingetragene Fach "' + subjId + '" ist nicht in der Fächerliste vorhanden. Bitte Admin prüfen.');
       }
     });
-// --- Save / Update Eintrag ---
+
+    // --- Save / Update Eintrag ---
     document.getElementById('saveBtn').addEventListener('click', async ()=>{
       try{
         const editingId = document.getElementById('editingId').value || '';
@@ -372,7 +362,6 @@
         document.getElementById('content').value = '';
         studentsContainer.querySelectorAll('.absenceType').forEach(s=>s.value='present');
         studentsContainer.querySelectorAll('.timeFrom, .timeTo').forEach(i=>i.value='');
-        timetableNote.style.display = 'none';
         await renderEntries();
       } catch(err){
         console.error(err);
@@ -384,7 +373,6 @@
       document.getElementById('editingId').value = '';
       document.getElementById('saveBtn').textContent = 'Schnell speichern';
       document.getElementById('cancelEditBtn').style.display = 'none';
-      timetableNote.style.display = 'none';
       restoreLastSelectionAfterMeta();
     });
 
@@ -423,7 +411,6 @@
 
         document.getElementById('saveBtn').textContent = 'Änderungen speichern';
         document.getElementById('cancelEditBtn').style.display = 'inline-block';
-        timetableNote.style.display = 'none';
         saveLastSelection();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }

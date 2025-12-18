@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Klassenbuch — Admin (Firebase)</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:12px;background:#f7f9fb;color:#111}
+    h2{margin:0 0 8px 0;font-size:1.1rem}
+    .card{background:#fff;padding:10px;margin:10px 0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    input,textarea,select,button{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #e6eef8;box-sizing:border-box}
+    button{background:#0b6cff;color:#fff;border:none;font-weight:600}
+    .row{display:flex;gap:8px}
+    .row> *{flex:1}
+    .list-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #f0f4fb}
+    .small{font-size:0.9rem;color:#444}
+    .course-list{margin-top:8px}
+    .course-item{padding:8px;border:1px solid #eef4ff;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+    .course-item div{flex:1}
+  </style>
+</head>
+<body>
+  <h2>Admin: Kurse, Fächer, Lehrer, Schüler</h2>
+
+  <!-- Firebase CDN + Konfiguration (gleich wie in index.html) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script>
+    // Dieselbe Firebase-Konfiguration wie in index.html einfügen
+    const firebaseConfig = {
+      apiKey: "AIzaSyBdflIYtuxvtzwnJmOIfVwNByR9E7uAnwU",
+      authDomain: "klbuch-57460.firebaseapp.com",
+      projectId: "klbuch-57460"
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+  <!-- Firestore-basierte Speicher-API -->
+  <script src="storage.firebase.js"></script>
+
+  <div class="card">
+    <div class="small">Neuen Kurs anlegen (Name + Schüler je Zeile)</div>
+    <input id="newCourse" placeholder="z. B. RSA261">
+    <textarea id="newCourseStudents" rows="3" placeholder="Je Zeile ein Schüler"></textarea>
+    <button id="addCourseBtn">Kurs mit Schülern anlegen</button>
+  </div>
+
+  <div class="card">
+    <div class="small">Bestehende Kurse</div>
+    <div id="courseList" class="course-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="small">Fächer verwalten</div>
+    <input id="newSubject" placeholder="Neues Fach">
+    <div class="row">
+      <button id="addSubject">Fach hinzufügen</button>
+      <button id="clearSubjects">Alle Fächer löschen</button>
+    </div>
+    <div id="subjectList" class="small"></div>
+  </div>
+
+  <div class="card">
+    <div class="small">Lehrer verwalten</div>
+    <input id="newTeacher" placeholder="Name">
+    <div class="row">
+      <button id="addTeacher">Hinzufügen</button>
+      <button id="clearTeachers">Alle löschen</button>
+    </div>
+    <div id="teacherList" class="small"></div>
+  </div>
+
+  <div class="card">
+    <div class="small">Einträge (letzte 50)</div>
+    <div id="entries"></div>
+  </div>
+
+  <script>
+    const kb = window.kbStorage;
+    if(!kb){
+      document.body.innerHTML = '<div style="padding:20px;color:#900">Fehler: storage.firebase.js oder Firebase nicht korrekt eingebunden.</div>';
+      throw new Error('kbStorage not available');
+    }
+
+    // DOM
+    const courseList = document.getElementById('courseList');
+    const subjectList = document.getElementById('subjectList');
+    const teacherList = document.getElementById('teacherList');
+    const entriesContainer = document.getElementById('entries');
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
+
+    function formatAbsences(abs){
+      if(!abs || abs.length===0) return '-';
+      return abs.map(a=>{
+        if(a.type==='absent_whole') return `${a.student}: fehlt ganz`;
+        if(a.type==='absent_until') return `${a.student}: fehlt bis ${a.to}`;
+        if(a.type==='absent_from') return `${a.student}: fehlt ab ${a.from}`;
+        if(a.type==='absent_fromto') return `${a.student}: fehlt ${a.from}-${a.to}`;
+        return `${a.student}: ${a.type}`;
+      }).join('; ');
+    }
+
+    // Render Meta (Kurse, Fächer, Lehrer)
+    async function renderMeta(){
+      const m = await kb.loadMeta();
+      // Kurse
+      courseList.innerHTML = '';
+      if(!m.courses || m.courses.length===0){
+        courseList.innerHTML = '<div class="small">Keine Kurse</div>';
+      } else {
+        m.courses.forEach(c => {
+          const div = document.createElement('div'); div.className = 'course-item';
+          div.innerHTML = `<div>
+                             <strong>${escapeHtml(c.name)}</strong>
+                             <div class="small">Schüler: ${escapeHtml((c.students||[]).join(', ') || '-')}</div>
+                           </div>
+                           <div style="margin-left:8px">
+                             <button data-id="${escapeHtml(c.id)}" class="editCourse">Bearbeiten</button>
+                             <button data-id="${escapeHtml(c.id)}" class="delCourse" style="margin-top:6px;background:#ff4d4f">Löschen</button>
+                           </div>`;
+          courseList.appendChild(div);
+        });
+      }
+      // Fächer
+      subjectList.innerHTML = (m.subjects || []).map(s => `<div class="small">${escapeHtml(s)}</div>`).join('') || '<div class="small">Keine Fächer</div>';
+      // Lehrer
+      teacherList.innerHTML = (m.teachers || []).map(t => `<div class="small">${escapeHtml(t)}</div>`).join('') || '<div class="small">Keine Lehrer</div>';
+    }
+
+    // Render Einträge
+    async function renderEntries(){
+      entriesContainer.innerHTML = '';
+      const entries = await kb.loadEntries();
+      if(!entries || entries.length===0){ entriesContainer.innerHTML = '<div class="small">Keine Einträge</div>'; return; }
+      entries.slice().sort((a,b)=> (a.date+a.hour).localeCompare(b.date+b.hour)).forEach(e=>{
+        const div = document.createElement('div'); div.className='list-item';
+        div.innerHTML = `<div style="flex:1">
+                          <div class="small">${escapeHtml(e.date)} • Stunde ${escapeHtml(e.hour)} • ${escapeHtml(e.course)} • ${escapeHtml(e.subject)}</div>
+                          <div><strong>${escapeHtml(e.content || '-')}</strong></div>
+                          <div class="small">Fehlzeiten: ${formatAbsences(e.absences)}</div>
+                         </div>
+                         <div style="text-align:right">
+                           <div class="small">Gesperrt: ${e.locked? 'Ja':'Nein'}</div>
+                           <button data-id="${e.id}" class="lockBtn">${e.locked? 'Entsperren':'Sperren'}</button>
+                           <button data-id="${e.id}" class="delEntry" style="margin-top:6px;background:#ff4d4f">Löschen</button>
+                         </div>`;
+        entriesContainer.appendChild(div);
+      });
+    }
+
+    // Buttons: Kurs anlegen
+    document.getElementById('addCourseBtn').addEventListener('click', async ()=>{
+      const name = document.getElementById('newCourse').value.trim();
+      const students = document.getElementById('newCourseStudents').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
+      if(!name) return alert('Kursname eingeben');
+      const res = await kb.addCourse(name, students);
+      if(!res.ok) return alert(res.reason || 'Fehler beim Anlegen');
+      document.getElementById('newCourse').value=''; document.getElementById('newCourseStudents').value='';
+      await renderMeta();
+    });
+
+    // Fächer / Lehrer Buttons
+    document.getElementById('addSubject').addEventListener('click', async ()=>{
+      const v = document.getElementById('newSubject').value.trim(); if(!v) return alert('Fach eingeben');
+      const m = await kb.loadMeta(); m.subjects = m.subjects || []; if(!m.subjects.includes(v)) m.subjects.push(v); await kb.saveMeta(m);
+      document.getElementById('newSubject').value=''; await renderMeta();
+    });
+    document.getElementById('clearSubjects').addEventListener('click', async ()=>{ if(confirm('Alle Fächer löschen?')){ const m=await kb.loadMeta(); m.subjects=[]; await kb.saveMeta(m); await renderMeta(); } });
+
+    document.getElementById('addTeacher').addEventListener('click', async ()=>{
+      const v = document.getElementById('newTeacher').value.trim(); if(!v) return alert('Name eingeben');
+      const m = await kb.loadMeta(); m.teachers = m.teachers || []; if(!m.teachers.includes(v)) m.teachers.push(v); await kb.saveMeta(m);
+      document.getElementById('newTeacher').value=''; await renderMeta();
+    });
+    document.getElementById('clearTeachers').addEventListener('click', async ()=>{ if(confirm('Alle Lehrer löschen?')){ const m=await kb.loadMeta(); m.teachers=[]; await kb.saveMeta(m); await renderMeta(); } });
+
+    // Delegation: Kurs bearbeiten/löschen, Einträge sperren/löschen
+    document.addEventListener('click', async (ev)=>{
+      if(ev.target.classList.contains('delCourse')){
+        const id = ev.target.dataset.id;
+        if(confirm('Kurs wirklich löschen? (Einträge bleiben erhalten, Kurszuordnung geht verloren)')){
+          await kb.deleteCourse(id);
+          await renderMeta();
+        }
+      }
+      if(ev.target.classList.contains('editCourse')){
+        const id = ev.target.dataset.id;
+        const meta = await kb.loadMeta();
+        const c = (meta.courses||[]).find(x=>x.id===id);
+        if(!c) return alert('Kurs nicht gefunden');
+        const newName = prompt('Kursname:', c.name);
+        if(newName === null) return;
+        const studentsText = prompt('Schüler (je Zeile):', (c.students || []).join('\n'));
+        if(studentsText === null) return;
+        c.name = newName.trim() || c.name;
+        c.students = studentsText.split('\n').map(s=>s.trim()).filter(Boolean);
+        await kb.saveMeta(meta);
+        await renderMeta();
+      }
+      if(ev.target.classList.contains('lockBtn')){
+        const id = ev.target.dataset.id; await kb.toggleLockEntry(id); await renderEntries();
+      }
+      if(ev.target.classList.contains('delEntry')){
+        const id = ev.target.dataset.id; if(confirm('Eintrag löschen?')){ await kb.deleteEntryById(id); await renderEntries(); }
+      }
+    });
+
+    // Init
+    (async function init(){
+      try{
+        await kb.ensureDefaults();
+        await renderMeta();
+        await renderEntries();
+      } catch(err){
+        console.error('Init error', err);
+      }
+    })();
+  </script>
+</body>
+</html>

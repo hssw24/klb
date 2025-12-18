@@ -1,32 +1,81 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Klassenbuch — Admin (Firebase)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Klassenbuch — Admin</title>
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:12px;background:#f7f9fb;color:#111}
-    h2{margin:0 0 8px 0;font-size:1.1rem}
+    :root{--accent:#0070f3}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:12px;background:#f4f6f8;color:#111}
+    header{display:flex;justify-content:space-between;align-items:center}
+    h2{margin:0;font-size:1.05rem}
     .card{background:#fff;padding:10px;margin:10px 0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-    input,textarea,select,button{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #e6eef8;box-sizing:border-box}
-    button{background:#0b6cff;color:#fff;border:none;font-weight:600}
+    input,select,textarea,button{width:100%;box-sizing:border-box}
+    input,select,textarea{padding:8px;margin-top:6px;border-radius:6px;border:1px solid #e6eef8}
+    button{padding:8px;margin-top:8px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-weight:600}
     .row{display:flex;gap:8px}
     .row> *{flex:1}
-    .list-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #f0f4fb}
     .small{font-size:0.9rem;color:#444}
-    .course-list{margin-top:8px}
-    .course-item{padding:8px;border:1px solid #eef4ff;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
-    .course-item div{flex:1}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #e6eef8;padding:6px;text-align:center}
+    th{background:#f7fbff}
+    .muted{background:#888}
+    .list-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eef4ff}
+    .list-item button{width:auto;padding:6px}
+    @media (max-width:600px){ .row{flex-direction:column} table{font-size:12px} }
   </style>
 </head>
 <body>
-  <h2>Admin: Kurse, Fächer, Lehrer, Schüler</h2>
+  <header>
+    <h2>Klassenbuch — Admin</h2>
+    <a class="small" href="index.html">Zur Lehrer‑Ansicht</a>
+  </header>
 
-  <!-- Firebase CDN + Konfiguration (gleich wie in index.html) -->
+  <div class="card">
+    <div class="small">Fächer (einfacher String pro Zeile)</div>
+    <textarea id="subjectsArea" rows="3" placeholder="Mathematik&#10;Deutsch&#10;Englisch"></textarea>
+    <button id="saveSubjectsBtn">Fächer speichern</button>
+  </div>
+
+  <div class="card">
+    <div class="small">Lehrer (ein Name pro Zeile)</div>
+    <textarea id="teachersArea" rows="2" placeholder="Frau Müller&#10;Herr Schmidt"></textarea>
+    <button id="saveTeachersBtn">Lehrer speichern</button>
+  </div>
+
+  <div class="card">
+    <div class="small">Kurse</div>
+    <div id="coursesList"></div>
+    <hr>
+    <div class="small">Neuen Kurs anlegen</div>
+    <input id="newCourseName" placeholder="Kursbezeichnung (z. B. RSA261)">
+    <textarea id="newCourseStudents" rows="3" placeholder="Schüler, ein Name pro Zeile"></textarea>
+    <button id="createCourseBtn">Kurs anlegen</button>
+  </div>
+
+  <div class="card" id="courseEditorCard" style="display:none">
+    <h3 id="editorTitle">Kurs bearbeiten</h3>
+    <div class="small">Kurs ID (nicht editierbar)</div>
+    <input id="editCourseId" disabled>
+    <div class="small">Kursname</div>
+    <input id="editCourseName">
+    <div class="small">Schüler (ein Name pro Zeile)</div>
+    <textarea id="editCourseStudents" rows="4"></textarea>
+
+    <div class="small" style="margin-top:8px">Stundenplan (Mo–Fr, 1–6)</div>
+    <div id="timetableContainer" class="card" style="padding:8px"></div>
+
+    <div style="display:flex;gap:8px">
+      <button id="saveCourseBtn">Speichern</button>
+      <button id="deleteCourseBtn" class="muted">Löschen</button>
+      <button id="closeEditorBtn" class="muted">Schließen</button>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script>
-    // Dieselbe Firebase-Konfiguration wie in index.html einfügen
+    // Firebase-Konfiguration hier einfügen
     const firebaseConfig = {
       apiKey: "AIzaSyBdflIYtuxvtzwnJmOIfVwNByR9E7uAnwU",
       authDomain: "klbuch-57460.firebaseapp.com",
@@ -35,184 +84,180 @@
     firebase.initializeApp(firebaseConfig);
   </script>
 
-  <!-- Firestore-basierte Speicher-API -->
   <script src="storage.firebase.js"></script>
-
-  <div class="card">
-    <div class="small">Neuen Kurs anlegen (Name + Schüler je Zeile)</div>
-    <input id="newCourse" placeholder="z. B. RSA261">
-    <textarea id="newCourseStudents" rows="3" placeholder="Je Zeile ein Schüler"></textarea>
-    <button id="addCourseBtn">Kurs mit Schülern anlegen</button>
-  </div>
-
-  <div class="card">
-    <div class="small">Bestehende Kurse</div>
-    <div id="courseList" class="course-list"></div>
-  </div>
-
-  <div class="card">
-    <div class="small">Fächer verwalten</div>
-    <input id="newSubject" placeholder="Neues Fach">
-    <div class="row">
-      <button id="addSubject">Fach hinzufügen</button>
-      <button id="clearSubjects">Alle Fächer löschen</button>
-    </div>
-    <div id="subjectList" class="small"></div>
-  </div>
-
-  <div class="card">
-    <div class="small">Lehrer verwalten</div>
-    <input id="newTeacher" placeholder="Name">
-    <div class="row">
-      <button id="addTeacher">Hinzufügen</button>
-      <button id="clearTeachers">Alle löschen</button>
-    </div>
-    <div id="teacherList" class="small"></div>
-  </div>
-
-  <div class="card">
-    <div class="small">Einträge (letzte 50)</div>
-    <div id="entries"></div>
-  </div>
 
   <script>
     const kb = window.kbStorage;
-    if(!kb){
-      document.body.innerHTML = '<div style="padding:20px;color:#900">Fehler: storage.firebase.js oder Firebase nicht korrekt eingebunden.</div>';
-      throw new Error('kbStorage not available');
+    if(!kb){ document.body.innerHTML = '<div style="padding:20px;color:#900">Fehler: storage.firebase.js fehlt.</div>'; throw new Error('kbStorage missing'); }
+
+    const subjectsArea = document.getElementById('subjectsArea');
+    const teachersArea = document.getElementById('teachersArea');
+    const saveSubjectsBtn = document.getElementById('saveSubjectsBtn');
+    const saveTeachersBtn = document.getElementById('saveTeachersBtn');
+    const coursesList = document.getElementById('coursesList');
+    const createCourseBtn = document.getElementById('createCourseBtn');
+    const newCourseName = document.getElementById('newCourseName');
+    const newCourseStudents = document.getElementById('newCourseStudents');
+
+    const courseEditorCard = document.getElementById('courseEditorCard');
+    const editCourseId = document.getElementById('editCourseId');
+    const editCourseName = document.getElementById('editCourseName');
+    const editCourseStudents = document.getElementById('editCourseStudents');
+    const timetableContainer = document.getElementById('timetableContainer');
+    const saveCourseBtn = document.getElementById('saveCourseBtn');
+    const deleteCourseBtn = document.getElementById('deleteCourseBtn');
+    const closeEditorBtn = document.getElementById('closeEditorBtn');
+    const editorTitle = document.getElementById('editorTitle');
+
+    let currentMeta = null;
+    let currentEditingCourseIndex = -1;
+
+    function subjectsToText(arr){ return (arr||[]).join('\n'); }
+    function textToSubjects(s){ return s.split('\n').map(x=>x.trim()).filter(x=>x); }
+
+    async function loadAll(){
+      currentMeta = await kb.loadMeta();
+      if(!currentMeta) currentMeta = { courses:[], subjects:[], teachers:[] };
+      // ensure defaults via storage API
+      await kb.ensureDefaults();
+      currentMeta = await kb.loadMeta();
+
+      subjectsArea.value = subjectsToText(currentMeta.subjects || []);
+      teachersArea.value = subjectsToText(currentMeta.teachers || []);
+      renderCoursesList();
     }
 
-    // DOM
-    const courseList = document.getElementById('courseList');
-    const subjectList = document.getElementById('subjectList');
-    const teacherList = document.getElementById('teacherList');
-    const entriesContainer = document.getElementById('entries');
-
-    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
-
-    function formatAbsences(abs){
-      if(!abs || abs.length===0) return '-';
-      return abs.map(a=>{
-        if(a.type==='absent_whole') return `${a.student}: fehlt ganz`;
-        if(a.type==='absent_until') return `${a.student}: fehlt bis ${a.to}`;
-        if(a.type==='absent_from') return `${a.student}: fehlt ab ${a.from}`;
-        if(a.type==='absent_fromto') return `${a.student}: fehlt ${a.from}-${a.to}`;
-        return `${a.student}: ${a.type}`;
-      }).join('; ');
-    }
-
-    // Render Meta (Kurse, Fächer, Lehrer)
-    async function renderMeta(){
-      const m = await kb.loadMeta();
-      // Kurse
-      courseList.innerHTML = '';
-      if(!m.courses || m.courses.length===0){
-        courseList.innerHTML = '<div class="small">Keine Kurse</div>';
-      } else {
-        m.courses.forEach(c => {
-          const div = document.createElement('div'); div.className = 'course-item';
-          div.innerHTML = `<div>
-                             <strong>${escapeHtml(c.name)}</strong>
-                             <div class="small">Schüler: ${escapeHtml((c.students||[]).join(', ') || '-')}</div>
-                           </div>
-                           <div style="margin-left:8px">
-                             <button data-id="${escapeHtml(c.id)}" class="editCourse">Bearbeiten</button>
-                             <button data-id="${escapeHtml(c.id)}" class="delCourse" style="margin-top:6px;background:#ff4d4f">Löschen</button>
-                           </div>`;
-          courseList.appendChild(div);
-        });
-      }
-      // Fächer
-      subjectList.innerHTML = (m.subjects || []).map(s => `<div class="small">${escapeHtml(s)}</div>`).join('') || '<div class="small">Keine Fächer</div>';
-      // Lehrer
-      teacherList.innerHTML = (m.teachers || []).map(t => `<div class="small">${escapeHtml(t)}</div>`).join('') || '<div class="small">Keine Lehrer</div>';
-    }
-
-    // Render Einträge
-    async function renderEntries(){
-      entriesContainer.innerHTML = '';
-      const entries = await kb.loadEntries();
-      if(!entries || entries.length===0){ entriesContainer.innerHTML = '<div class="small">Keine Einträge</div>'; return; }
-      entries.slice().sort((a,b)=> (a.date+a.hour).localeCompare(b.date+b.hour)).forEach(e=>{
-        const div = document.createElement('div'); div.className='list-item';
-        div.innerHTML = `<div style="flex:1">
-                          <div class="small">${escapeHtml(e.date)} • Stunde ${escapeHtml(e.hour)} • ${escapeHtml(e.course)} • ${escapeHtml(e.subject)}</div>
-                          <div><strong>${escapeHtml(e.content || '-')}</strong></div>
-                          <div class="small">Fehlzeiten: ${formatAbsences(e.absences)}</div>
-                         </div>
-                         <div style="text-align:right">
-                           <div class="small">Gesperrt: ${e.locked? 'Ja':'Nein'}</div>
-                           <button data-id="${e.id}" class="lockBtn">${e.locked? 'Entsperren':'Sperren'}</button>
-                           <button data-id="${e.id}" class="delEntry" style="margin-top:6px;background:#ff4d4f">Löschen</button>
-                         </div>`;
-        entriesContainer.appendChild(div);
+    function renderCoursesList(){
+      coursesList.innerHTML = '';
+      (currentMeta.courses || []).forEach((c, idx)=>{
+        const div = document.createElement('div'); div.className = 'list-item';
+        const left = document.createElement('div'); left.innerHTML = `<strong>${c.name}</strong><div class="small">${c.id}</div>`;
+        const right = document.createElement('div');
+        const editBtn = document.createElement('button'); editBtn.textContent = 'Bearbeiten';
+        editBtn.addEventListener('click', ()=> openEditor(idx));
+        right.appendChild(editBtn);
+        div.appendChild(left); div.appendChild(right);
+        coursesList.appendChild(div);
       });
     }
 
-    // Buttons: Kurs anlegen
-    document.getElementById('addCourseBtn').addEventListener('click', async ()=>{
-      const name = document.getElementById('newCourse').value.trim();
-      const students = document.getElementById('newCourseStudents').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
-      if(!name) return alert('Kursname eingeben');
+    saveSubjectsBtn.addEventListener('click', async ()=>{
+      const arr = textToSubjects(subjectsArea.value);
+      currentMeta.subjects = arr;
+      const res = await kb.saveMeta(currentMeta);
+      if(!res.ok) return alert('Fehler beim Speichern: ' + (res.reason||''));
+      alert('Fächer gespeichert');
+      await loadAll();
+    });
+
+    saveTeachersBtn.addEventListener('click', async ()=>{
+      const arr = textToSubjects(teachersArea.value);
+      currentMeta.teachers = arr;
+      const res = await kb.saveMeta(currentMeta);
+      if(!res.ok) return alert('Fehler beim Speichern: ' + (res.reason||''));
+      alert('Lehrer gespeichert');
+      await loadAll();
+    });
+
+    createCourseBtn.addEventListener('click', async ()=>{
+      const name = newCourseName.value.trim();
+      if(!name) return alert('Bitte Kursname eingeben');
+      const students = newCourseStudents.value.split('\n').map(s=>s.trim()).filter(s=>s);
       const res = await kb.addCourse(name, students);
-      if(!res.ok) return alert(res.reason || 'Fehler beim Anlegen');
-      document.getElementById('newCourse').value=''; document.getElementById('newCourseStudents').value='';
-      await renderMeta();
+      if(!res.ok) return alert('Fehler: ' + (res.reason||''));
+      newCourseName.value = ''; newCourseStudents.value = '';
+      await loadAll();
     });
 
-    // Fächer / Lehrer Buttons
-    document.getElementById('addSubject').addEventListener('click', async ()=>{
-      const v = document.getElementById('newSubject').value.trim(); if(!v) return alert('Fach eingeben');
-      const m = await kb.loadMeta(); m.subjects = m.subjects || []; if(!m.subjects.includes(v)) m.subjects.push(v); await kb.saveMeta(m);
-      document.getElementById('newSubject').value=''; await renderMeta();
-    });
-    document.getElementById('clearSubjects').addEventListener('click', async ()=>{ if(confirm('Alle Fächer löschen?')){ const m=await kb.loadMeta(); m.subjects=[]; await kb.saveMeta(m); await renderMeta(); } });
+    // Timetable editor renderer
+    function renderTimetableEditor(container, timetable, subjects){
+      const days = ['mon','tue','wed','thu','fri'];
+      container.innerHTML = '';
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      headRow.appendChild(document.createElement('th')); // corner
+      for(let h=1; h<=6; h++){ const th = document.createElement('th'); th.textContent = h; headRow.appendChild(th); }
+      thead.appendChild(headRow); table.appendChild(thead);
 
-    document.getElementById('addTeacher').addEventListener('click', async ()=>{
-      const v = document.getElementById('newTeacher').value.trim(); if(!v) return alert('Name eingeben');
-      const m = await kb.loadMeta(); m.teachers = m.teachers || []; if(!m.teachers.includes(v)) m.teachers.push(v); await kb.saveMeta(m);
-      document.getElementById('newTeacher').value=''; await renderMeta();
-    });
-    document.getElementById('clearTeachers').addEventListener('click', async ()=>{ if(confirm('Alle Lehrer löschen?')){ const m=await kb.loadMeta(); m.teachers=[]; await kb.saveMeta(m); await renderMeta(); } });
-
-    // Delegation: Kurs bearbeiten/löschen, Einträge sperren/löschen
-    document.addEventListener('click', async (ev)=>{
-      if(ev.target.classList.contains('delCourse')){
-        const id = ev.target.dataset.id;
-        if(confirm('Kurs wirklich löschen? (Einträge bleiben erhalten, Kurszuordnung geht verloren)')){
-          await kb.deleteCourse(id);
-          await renderMeta();
+      const tbody = document.createElement('tbody');
+      days.forEach(day=>{
+        const tr = document.createElement('tr');
+        const th = document.createElement('th'); th.textContent = day.toUpperCase(); tr.appendChild(th);
+        for(let h=0; h<6; h++){
+          const td = document.createElement('td');
+          const sel = document.createElement('select');
+          sel.dataset.day = day; sel.dataset.hour = h+1;
+          const emptyOpt = document.createElement('option'); emptyOpt.value=''; emptyOpt.textContent='--';
+          sel.appendChild(emptyOpt);
+          (subjects||[]).forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o); });
+          sel.value = (timetable && timetable[day] && timetable[day][h]) || '';
+          td.appendChild(sel); tr.appendChild(td);
         }
-      }
-      if(ev.target.classList.contains('editCourse')){
-        const id = ev.target.dataset.id;
-        const meta = await kb.loadMeta();
-        const c = (meta.courses||[]).find(x=>x.id===id);
-        if(!c) return alert('Kurs nicht gefunden');
-        const newName = prompt('Kursname:', c.name);
-        if(newName === null) return;
-        const studentsText = prompt('Schüler (je Zeile):', (c.students || []).join('\n'));
-        if(studentsText === null) return;
-        c.name = newName.trim() || c.name;
-        c.students = studentsText.split('\n').map(s=>s.trim()).filter(Boolean);
-        await kb.saveMeta(meta);
-        await renderMeta();
-      }
-      if(ev.target.classList.contains('lockBtn')){
-        const id = ev.target.dataset.id; await kb.toggleLockEntry(id); await renderEntries();
-      }
-      if(ev.target.classList.contains('delEntry')){
-        const id = ev.target.dataset.id; if(confirm('Eintrag löschen?')){ await kb.deleteEntryById(id); await renderEntries(); }
-      }
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+
+    function readTimetableFromEditor(container){
+      const days = ['mon','tue','wed','thu','fri'];
+      const tt = {};
+      days.forEach(day=>{
+        tt[day] = [];
+        for(let h=1; h<=6; h++){
+          const sel = container.querySelector(`select[data-day="${day}"][data-hour="${h}"]`);
+          tt[day].push(sel ? (sel.value || '') : '');
+        }
+      });
+      return tt;
+    }
+
+    function openEditor(idx){
+      currentEditingCourseIndex = idx;
+      const course = currentMeta.courses[idx];
+      editCourseId.value = course.id;
+      editCourseName.value = course.name || '';
+      editCourseStudents.value = (course.students || []).join('\n');
+      renderTimetableEditor(timetableContainer, course.timetable || {}, currentMeta.subjects || []);
+      courseEditorCard.style.display = 'block';
+      editorTitle.textContent = 'Kurs bearbeiten: ' + course.name;
+    }
+
+    closeEditorBtn.addEventListener('click', ()=> {
+      courseEditorCard.style.display = 'none';
+      currentEditingCourseIndex = -1;
+    });
+
+    saveCourseBtn.addEventListener('click', async ()=>{
+      if (currentEditingCourseIndex < 0) return;
+      const course = currentMeta.courses[currentEditingCourseIndex];
+      course.name = editCourseName.value.trim() || course.name;
+      course.students = editCourseStudents.value.split('\n').map(s=>s.trim()).filter(s=>s);
+      course.timetable = readTimetableFromEditor(timetableContainer);
+      const res = await kb.saveMeta(currentMeta);
+      if(!res.ok) return alert('Fehler beim Speichern: ' + (res.reason||''));
+      alert('Kurs gespeichert');
+      await loadAll();
+      courseEditorCard.style.display = 'none';
+    });
+
+    deleteCourseBtn.addEventListener('click', async ()=>{
+      if (currentEditingCourseIndex < 0) return;
+      const course = currentMeta.courses[currentEditingCourseIndex];
+      if(!confirm('Kurs "'+course.name+'" wirklich löschen?')) return;
+      const res = await kb.deleteCourse(course.id);
+      if(!res.ok) return alert('Fehler: ' + (res.reason||''));
+      await loadAll();
+      courseEditorCard.style.display = 'none';
     });
 
     // Init
     (async function init(){
-      try{
+      try {
         await kb.ensureDefaults();
-        await renderMeta();
-        await renderEntries();
-      } catch(err){
+        await loadAll();
+      } catch (err) {
         console.error('Init error', err);
       }
     })();
