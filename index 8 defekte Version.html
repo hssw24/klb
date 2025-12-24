@@ -118,6 +118,7 @@
     const rawEntriesEl = document.getElementById('rawEntries');
     const applyTimetableBtn = document.getElementById('applyTimetableBtn');
     const timetableNote = document.getElementById('timetableNote');
+    const openSettings = document.getElementById('openSettings');
 
     // LocalStorage keys used by settings widget
     const TEACHER_FILTER_SEL = 'teacher_filter_selected';
@@ -297,7 +298,7 @@
       }
     }
 
-    // Apply timetable button
+    // Apply timetable button (unverändert)
     applyTimetableBtn.addEventListener('click', async ()=>{
       const courseId = courseSelect.value;
       const dateVal = document.getElementById('date').value;
@@ -338,7 +339,7 @@
       }
     });
 
-    // Save / Update Eintrag
+    // Save / Update Eintrag (unverändert)
     document.getElementById('saveBtn').addEventListener('click', async ()=>{
       try{
         const editingId = document.getElementById('editingId').value || '';
@@ -393,7 +394,7 @@
       }
     });
 
-    // Delegation: Bearbeiten-Button
+    // Delegation: Bearbeiten-Button (unverändert)
     document.addEventListener('click', async (ev) => {
       if (ev.target.classList.contains('editEntryBtn')) {
         const id = ev.target.dataset.id;
@@ -434,29 +435,13 @@
       }
     });
 
-    // Reagiere auf Änderungen in anderen Tabs (settings.html)
-    window.addEventListener('storage', (e) => {
-      if (!e.key) return;
-      if (e.key === TEACHER_FILTER_SEL || e.key === TEACHER_FILTER_ONLY) {
-        try { renderEntries(); } catch (err) { console.warn('renderEntries error', err); }
-        // Falls Meta (Lehrer) geändert wurde, aktualisiere Selects
-        if (e.key === TEACHER_FILTER_SEL && e.newValue !== null) {
-          // setze teacherSelect auf neuen Wert, falls vorhanden
-          const newVal = e.newValue || '';
-          if (newVal && Array.from(teacherSelect.options).some(o => o.value === newVal)) {
-            teacherSelect.value = newVal;
-          }
-        }
-      }
-    });
-
     // Init
     (async function init(){
       try{
         await kb.ensureDefaults();
         document.getElementById('date').value = new Date().toISOString().slice(0,10);
         await populateMetaControls();
-        await restoreLastSelectionAfterMeta();
+        // settings are managed in settings.html; index reads localStorage keys
         await renderEntries();
       } catch(err){
         console.error('Init error', err);

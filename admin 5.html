@@ -73,12 +73,6 @@
     </div>
   </div>
 
-  <!-- Filter-Widget Container (wird entries-filter.html laden) -->
-  <div class="card">
-    <div class="small">Filter</div>
-    <div id="entriesFilterContainer">Lade Filter…</div>
-  </div>
-
   <!-- Neu: Admin Panel für Einträge -->
   <div class="card" id="entriesAdminCard">
     <div class="small">Stunden / Einträge</div>
@@ -96,13 +90,12 @@
     };
     firebase.initializeApp(firebaseConfig);
   </script>
+
   <script src="storage.firebase.js"></script>
 
   <script>
     const kb = window.kbStorage;
     if(!kb){ document.body.innerHTML = '<div style="padding:20px;color:#900">Fehler: storage.firebase.js fehlt.</div>'; throw new Error('kbStorage missing'); }
-
-    const ADMIN_FILTER_LS = 'admin_entries_teacher_filter';
 
     const subjectsArea = document.getElementById('subjectsArea');
     const teachersArea = document.getElementById('teachersArea');
@@ -124,7 +117,6 @@
     const editorTitle = document.getElementById('editorTitle');
 
     const entriesListContainer = document.getElementById('entriesList');
-    const entriesFilterContainer = document.getElementById('entriesFilterContainer');
 
     let currentMeta = null;
     let currentEditingCourseIndex = -1;
@@ -176,7 +168,6 @@
       if(!res.ok) return alert('Fehler beim Speichern: ' + (res.reason||''));
       alert('Fächer gespeichert');
       await loadAll();
-      await loadEntriesFilterWidget();
       await renderAdminEntries();
     });
 
@@ -187,7 +178,6 @@
       if(!res.ok) return alert('Fehler beim Speichern: ' + (res.reason||''));
       alert('Lehrer gespeichert');
       await loadAll();
-      await loadEntriesFilterWidget();
       await renderAdminEntries();
     });
 
@@ -199,7 +189,6 @@
       if(!res.ok) return alert('Fehler: ' + (res.reason||''));
       newCourseName.value = ''; newCourseStudents.value = '';
       await loadAll();
-      await loadEntriesFilterWidget();
       await renderAdminEntries();
     });
 
@@ -273,7 +262,6 @@
       if(!res.ok) return alert('Fehler beim Speichern: ' + (res.reason||''));
       alert('Kurs gespeichert');
       await loadAll();
-      await loadEntriesFilterWidget();
       await renderAdminEntries();
       courseEditorCard.style.display = 'none';
     });
@@ -285,11 +273,11 @@
       const res = await kb.deleteCourse(course.id);
       if(!res.ok) return alert('Fehler: ' + (res.reason||''));
       await loadAll();
-      await loadEntriesFilterWidget();
       await renderAdminEntries();
       courseEditorCard.style.display = 'none';
     });
-    // --- Admin: Einträge laden and rendern (mit Lehrer-Filter) ---
+
+    // --- Admin: Einträge laden und rendern ---
     async function renderAdminEntries() {
       const container = entriesListContainer;
       container.innerHTML = 'Lade Einträge…';
@@ -303,13 +291,8 @@
           if (a.date === b.date) return (b.hour||0) - (a.hour||0);
           return (b.date || '').localeCompare(a.date || '');
         });
-
-        // Filter aus localStorage lesen
-        const teacherFilter = localStorage.getItem(ADMIN_FILTER_LS) || 'all';
-        const filtered = (teacherFilter && teacherFilter !== 'all') ? sorted.filter(e => (e.teacher || '') === teacherFilter) : sorted;
-
         container.innerHTML = '';
-        filtered.forEach(e => {
+        sorted.forEach(e => {
           const div = document.createElement('div');
           div.className = 'list-item';
           const left = document.createElement('div');
@@ -352,52 +335,11 @@
       }
     }
 
-    // --- Lade das externe Filter-Widget (entries-filter.html) und führe enthaltene Scripts aus ---
-    async function loadEntriesFilterWidget(){
-      const container = entriesFilterContainer;
-      container.textContent = 'Lade Filter…';
-      try {
-        const resp = await fetch('entries-filter.html');
-        if (!resp.ok) { container.textContent = 'Filter konnte nicht geladen werden'; return; }
-        const html = await resp.text();
-
-        // Trenne script-tags, setze HTML ohne scripts und führe Scripts separat aus
-        const div = document.createElement('div');
-        div.innerHTML = html;
-
-        // Extrahiere und entferne script-Elemente
-        const scripts = Array.from(div.querySelectorAll('script'));
-        scripts.forEach(s => s.remove());
-
-        // Setze den HTML-Teil (ohne scripts)
-        container.innerHTML = div.innerHTML;
-
-        // Führe die Scripts nacheinander aus (im globalen Kontext)
-        for (const s of scripts) {
-          const code = s.textContent || s.innerText || '';
-          if (!code.trim()) continue;
-          const scriptEl = document.createElement('script');
-          scriptEl.type = 'text/javascript';
-          scriptEl.text = code;
-          container.appendChild(scriptEl);
-        }
-
-        // Falls das Widget expose updateFilterWidget, rufe es an, damit Lehrer-Liste aktuell ist
-        if (typeof window.updateFilterWidget === 'function') {
-          try { window.updateFilterWidget(); } catch(e){ /* ignore */ }
-        }
-      } catch (err) {
-        console.error('loadEntriesFilterWidget error', err);
-        container.textContent = 'Fehler beim Laden des Filters';
-      }
-    }
-
     // Init
     (async function init(){
       try {
         await kb.ensureDefaults();
         await loadAll();
-        await loadEntriesFilterWidget();
         await renderAdminEntries();
       } catch (err) {
         console.error('Init error', err);
