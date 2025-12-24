@@ -15,8 +15,6 @@
     .progress{height:8px;background:#eef4ff;border-radius:6px;overflow:hidden;width:200px}
     .progress > i{display:block;height:100%;background:#0b6cff;width:0%}
     .small{font-size:0.95rem;color:#444}
-    a.file-link{color:#0b6cff;text-decoration:none;margin-right:8px}
-    .meta-line{font-size:0.9rem;color:#666;margin-bottom:8px}
   </style>
 </head>
 <body>
@@ -62,9 +60,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
   <script>
-    // -----------------------------
     // Firebase Konfiguration
-    // -----------------------------
     // Trage hier deine Firebase‑Config ein (wie in index.html/admin.html)
     const firebaseConfig = {
       apiKey: "AIzaSyBdflIYtuxvtzwnJmOIfVwNByR9E7uAnwU",
@@ -95,9 +91,7 @@
       uploadBtn.disabled = true;
     }
 
-    // -----------------------------
     // Cloudinary Konfiguration
-    // -----------------------------
     // Trage hier deine Cloudinary‑Daten ein, genau wie bei Firebase oben
     // Beispiel:
     // const CLOUDINARY_CONFIG = { cloudName: "DEIN_CLOUD_NAME", uploadPreset: "DEIN_UPLOAD_PRESET" };
@@ -105,7 +99,7 @@
       cloudName: "dbevz8t2n",
       uploadPreset: "unsigned_upload"
     };
-    const USE_CLOUDINARY = Boolean(CLOUDINARY_CONFIG.cloudName && CLOUDINARY_CONFIG.uploadPreset);
+    const USE_CLOUDINARY = CLOUDINARY_CONFIG.cloudName && CLOUDINARY_CONFIG.uploadPreset;
 
     function setStatus(msg, isError){
       statusEl.textContent = msg;
@@ -114,7 +108,7 @@
 
     async function loadEntryMeta(){
       try {
-        if (window.kbStorage && typeof kbStorage.loadEntry === 'function') {
+        if (window.kbStorage && kbStorage.loadEntry) {
           const e = await kbStorage.loadEntry(entryId);
           metaEl.textContent = `Eintrag: ${e.date || ''} • Stunde ${e.hour || ''} • ${e.course || ''} • ${e.subject || ''}`;
         } else {
@@ -125,14 +119,12 @@
       }
     }
 
-    // -----------------------------
-    // Listing: Firestore-Metadaten bevorzugen
-    // -----------------------------
+    // Bevorzugt Firestore-Metadaten; Fallback auf Firebase Storage listing
     async function listAttachments(){
       attachmentsList.innerHTML = 'Lade…';
       try {
         console.log('USE_CLOUDINARY:', USE_CLOUDINARY);
-        console.log('kbStorage.listAttachmentsForEntry exists:', !!(window.kbStorage && typeof kbStorage.listAttachmentsForEntry === 'function'));
+        console.log('kbStorage.listAttachmentsForEntry exists:', !!(window.kbStorage && kbStorage.listAttachmentsForEntry));
 
         // 1) Bevorzugt Firestore-Metadaten (wichtig bei Cloudinary)
         if (window.kbStorage && typeof kbStorage.listAttachmentsForEntry === 'function') {
@@ -162,26 +154,24 @@
       items.forEach(it => {
         const row = document.createElement('div'); row.className = 'file-row';
         const left = document.createElement('div'); left.style.flex='1';
-        const filename = it.name || (it.url || '').split('/').pop() || 'Datei';
-        const isImage = /\.(jpe?g|png|gif|webp|bmp)$/i.test(filename) || /\.(jpe?g|png|gif|webp|bmp)$/i.test(it.url || '');
+        const isImage = /\.(jpe?g|png|gif|webp|bmp)$/i.test(it.name || (it.url||''));
         if(isImage){
-          left.innerHTML = `<img src="${it.url}" class="preview" alt="${escapeHtml(filename)}">`;
+          left.innerHTML = `<img src="${it.url}" class="preview">`;
         } else {
-          left.innerHTML = `<div class="meta-line">${escapeHtml(filename)}</div>`;
+          left.innerHTML = `<div class="small">${escapeHtml(it.name || 'Datei')}</div>`;
         }
         const right = document.createElement('div');
-        const a = document.createElement('a'); a.href = it.url || '#'; a.target='_blank'; a.className='file-link'; a.textContent = 'Öffnen';
+        const a = document.createElement('a'); a.href = it.url; a.target='_blank'; a.textContent = 'Öffnen';
         const del = document.createElement('button'); del.textContent = 'Löschen'; del.className='muted';
         del.addEventListener('click', async ()=>{
           if(!confirm('Datei wirklich löschen?')) return;
           del.disabled = true;
           try {
-            if (window.kbStorage && typeof kbStorage.deleteAttachment === 'function') {
-              await kbStorage.deleteAttachment(entryId, it.name || filename);
+            if (window.kbStorage && kbStorage.deleteAttachment) {
+              await kbStorage.deleteAttachment(entryId, it.name);
             } else {
-              // Fallback: versuche Firebase Storage zu löschen (funktioniert nur für Firebase-Uploads)
               const storage = firebase.storage();
-              const ref = storage.ref().child(`attachments/${entryId}/${it.name || filename}`);
+              const ref = storage.ref().child(`attachments/${entryId}/${it.name}`);
               await ref.delete();
             }
             await listAttachments();
@@ -197,37 +187,24 @@
       });
     }
 
-    // -----------------------------
-    // Upload-Funktion: Cloudinary (raw/image) oder Firebase Storage
-    // -----------------------------
+    // Upload-Funktion: unterstützt Cloudinary (unsigned) oder Firebase Storage
     async function uploadFile(file, onProgress){
       if (USE_CLOUDINARY) {
-        // Bestimme resource_type: 'raw' für PDFs/andere non-image, sonst 'image'
-        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-        const resourceType = isPdf ? 'raw' : 'image';
-        const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/${resourceType}/upload`;
-
+        const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/upload`;
         const fd = new FormData();
         fd.append('file', file);
         fd.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
         fd.append('folder', `attachments/${entryId}`);
-
         return new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', url);
           xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)); };
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const res = JSON.parse(xhr.responseText);
-                // res.secure_url ist die korrekte öffentliche URL (für raw oder image)
-                const name = res.public_id ? (res.public_id + (res.format ? '.' + res.format : '')) : file.name;
-                const publicUrl = res.secure_url || res.url || '';
-                resolve({ name, url: publicUrl, rawResponse: res });
-              } catch (e) {
-                reject(new Error('Cloudinary: Ungültige Antwort'));
-              }
-            } else reject(new Error('Cloudinary Upload fehlgeschlagen: ' + xhr.status));
+              const res = JSON.parse(xhr.responseText);
+              // return name and secure url
+              resolve({ name: (res.public_id ? (res.public_id + (res.format ? '.' + res.format : '')) : (file.name)), url: res.secure_url || res.url || '' });
+            } else reject(new Error('Cloudinary Upload fehlgeschlagen'));
           };
           xhr.onerror = () => reject(new Error('Cloudinary Upload Fehler'));
           xhr.send(fd);
@@ -257,9 +234,7 @@
 
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
 
-    // -----------------------------
-    // Upload-Handler: Dateien hochladen, öffentliche URL sicherstellen, Metadaten speichern
-    // -----------------------------
+    // Upload-Handler: sammle alle ausgewählten Dateien, lade hoch, speichere Metadaten und lade Liste neu
     uploadBtn.addEventListener('click', async ()=>{
       const files = [];
       if (galleryInput.files && galleryInput.files.length) for(const f of galleryInput.files) files.push(f);
@@ -297,8 +272,7 @@
             const metaRes = await kbStorage.addAttachmentMeta(entryId, {
               name: res.name,
               url: publicUrl,
-              uploadedAt: Date.now(),
-              meta: { size: f.size, type: f.type }
+              uploadedAt: Date.now()
             });
             if (!metaRes || !metaRes.ok) {
               console.warn('addAttachmentMeta returned not-ok', metaRes);
@@ -321,7 +295,6 @@
 
     refreshBtn.addEventListener('click', listAttachments);
 
-    // initial
     loadEntryMeta();
     listAttachments();
   })();
