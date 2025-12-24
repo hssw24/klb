@@ -25,33 +25,22 @@
     <div id="teacherFilterContainer">Lade Filter…</div>
   </div>
 
-  <!-- Firebase + storage API damit das Widget kbStorage nutzen kann -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script>
-    // Firebase-Konfiguration: bitte hier deine Werte eintragen
-    const firebaseConfig = {
-      apiKey: "DEINE_API_KEY",
-      authDomain: "DEINE_AUTH_DOMAIN",
-      projectId: "DEINE_PROJECT_ID"
-    };
-    firebase.initializeApp(firebaseConfig);
-  </script>
-  <script src="storage.firebase.js"></script>
-
-  <script>
-    // Lädt teacher-filter.html inline und führt enthaltene Skripte aus.
+    // Lädt das kleine Widget teacher-filter.html inline und führt enthaltene Skripte aus.
     (async function(){
       const container = document.getElementById('teacherFilterContainer');
       try {
         const resp = await fetch('teacher-filter.html');
         if (!resp.ok) { container.textContent = 'Filter konnte nicht geladen werden'; return; }
         const html = await resp.text();
+        // Setze HTML
         const wrapper = document.createElement('div');
         wrapper.innerHTML = html;
+        // Extrahiere Scripts und entferne sie aus wrapper
         const scripts = Array.from(wrapper.querySelectorAll('script'));
         scripts.forEach(s => s.remove());
         container.innerHTML = wrapper.innerHTML;
+        // Führe Scripts nacheinander aus
         for (const s of scripts) {
           const code = s.textContent || s.innerText || '';
           if (!code.trim()) continue;
@@ -60,6 +49,7 @@
           sc.text = code;
           container.appendChild(sc);
         }
+        // Falls das Widget eine Update-Funktion exposed, rufe sie an
         if (typeof window.updateTeacherFilterWidget === 'function') {
           try { window.updateTeacherFilterWidget(); } catch(e){ /* ignore */ }
         }

@@ -64,7 +64,9 @@
     const only = $id('onlyOwnCheckbox').checked ? '1' : '0';
     localStorage.setItem(LS_SEL, sel);
     localStorage.setItem(LS_ONLY, only);
+    // signal an parent (falls vorhanden) und rely on storage event for other tabs
     try { if (parent && parent.applyTeacherFilter) parent.applyTeacherFilter(); } catch(e){ /* ignore */ }
+    // optional visual feedback
     $id('filterSaveBtn').textContent = 'Gespeichert';
     setTimeout(()=> $id('filterSaveBtn').textContent = 'Speichern', 900);
   });
@@ -78,6 +80,7 @@
     try { if (parent && parent.applyTeacherFilter) parent.applyTeacherFilter(); } catch(e){ /* ignore */ }
   });
 
+  // expose update function so parent can refresh teacher list if needed
   window.updateTeacherFilterWidget = populate;
 
   await populate();
